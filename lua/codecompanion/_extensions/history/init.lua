@@ -38,6 +38,16 @@ local default_opts = {
     save_chat_keymap_description = "Save current chat",
     ---Save all chats by default (disable to save only manually using 'sc')
     auto_save = true,
+    -- 新增过滤配置
+    auto_save_filter = {
+        -- 只保存特定交互类型（如 chat, agent）
+        interactions = { "chat", "agent" },
+        -- 只保存特定工具调用结果
+        tools = {},
+        models = nil, -- 例如 { "gpt-4o", "claude-3" }
+        -- 自定义过滤函数（优先级最高）
+        custom = nil, -- function(opts_data) return boolean end
+    },
     ---Number of days after which chats are automatically deleted (0 to disable)
     expiration_days = 0,
     ---Valid Picker interface ("telescope", "snacks", "fzf-lua", or "default")
@@ -142,6 +152,44 @@ function History:_create_commands()
         desc = "Open saved summaries",
     })
 end
+--- 判断是否应该保存会话
+---@param data table 事件数据
+---@param chat CodeCompanion.History.Chat 当前 chat 实例
+---@return boolean
+function History:_should_save(data, chat)
+    local filter = self.opts.auto_save_filter
+    if not filter then
+        return true
+    end
+
+    -- 1. 自定义过滤函数（优先执行，传入 chat 实例和事件数据）
+    if filter.custom and type(filter.custom) == "function" then
+        return filter.custom(data, chat)
+    end
+
+    -- 2. 交互类型过滤
+    if filter.interactions and not vim.tbl_contains(filter.interactions, data.interaction) then
+        log:trace("Interaction '%s' not in allowed list", data.interaction)
+        return false
+    end
+
+    -- 3. 工具过滤（仅对 ToolsFinished 事件）
+    if opts.match == "CodeCompanionToolsFinished" and filter.tools then
+        local tool_name = data.tool and data.tool.name or ""
+        if not vim.tbl_contains(filter.tools, tool_name) then
+            log:trace("Tool '%s' not in allowed list", tool_name)
+            return false
+        end
+    end
+
+    -- 4. 模型过滤
+    if filter.models and data.model and not vim.tbl_contains(filter.models, data.model) then
+        log:trace("Model '%s' not in allowed list", data.model)
+        return false
+    end
+
+    return true
+end
 
 function History:_setup_autocommands()
     local group = vim.api.nvim_create_augroup("CodeCompanionHistory", { clear = true })
@@ -211,6 +259,10 @@ function History:_setup_autocommands()
                 end
                 local chat = chat_module.buf_get_chat(bufnr) --[[@as CodeCompanion.History.Chat]]
                 if chat then
+                    -- 应用过滤条件，传入 chat 实例
+                    if not self:_should_save(opts.data, chat) then
+                        return log:trace("Skipping save due to filter conditions")
+                    end
                     self.storage:save_chat(chat)
                 end
             end
@@ -254,6 +306,10 @@ function History:_setup_autocommands()
                             chat.opts.title = generated_title
 
                             if self.opts.auto_save then
+                                -- 应用过滤条件，传入 chat 实例
+                                if not self:_should_save(opts.data, chat) then
+                                    return log:trace("Skipping save due to filter conditions")
+                                end
                                 self.storage:save_chat(chat)
                             end
                         end
@@ -264,6 +320,10 @@ function History:_setup_autocommands()
             end
 
             if self.opts.auto_save then
+                -- 应用过滤条件，传入 chat 实例
+                if not self:_should_save(opts.data, chat) then
+                    return log:trace("Skipping save due to filter conditions")
+                end
                 self.storage:save_chat(chat)
             end
         end),
