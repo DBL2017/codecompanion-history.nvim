@@ -174,7 +174,7 @@ function History:_should_save(data, chat)
     end
 
     -- 3. 工具过滤（仅对 ToolsFinished 事件）
-    if opts.match == "CodeCompanionToolsFinished" and filter.tools then
+    if data.match == "CodeCompanionToolsFinished" and filter.tools then
         local tool_name = data.tool and data.tool.name or ""
         if not vim.tbl_contains(filter.tools, tool_name) then
             log:trace("Tool '%s' not in allowed list", tool_name)

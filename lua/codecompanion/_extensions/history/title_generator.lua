@@ -37,6 +37,7 @@ function TitleGenerator:_count_user_messages(chat)
     local actual_user_messages = vim.tbl_filter(function(msg)
         local has_content = msg.content and vim.trim(msg.content) ~= ""
         return has_content
+            and not (msg.opts and msg.opts.visible == false)
             and not (msg.opts and msg.opts.tag)
             and not (msg.opts and (msg.opts.reference or msg.opts.context_id))
     end, user_messages)
@@ -102,8 +103,9 @@ function TitleGenerator:generate(chat, callback, is_refresh)
         -- Include user and assistant messages with actual content
         local has_content = msg.content and vim.trim(msg.content) ~= ""
         local is_relevant_role = msg.role == config.constants.USER_ROLE or msg.role == config.constants.LLM_ROLE
+        local is_visible = not (msg.opts and msg.opts.visible == false)
         local not_tagged = not (msg.opts and (msg.opts.tag or msg.opts.reference or msg.opts.context_id))
-        return has_content and is_relevant_role and not_tagged
+        return has_content and is_relevant_role and is_visible and not_tagged
     end, chat.messages)
 
     if #relevant_messages == 0 then
